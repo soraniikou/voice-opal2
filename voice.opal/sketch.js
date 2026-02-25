@@ -1,5 +1,5 @@
 // Becomes Opal v2 - 感情リリースアプリ
-// 変更点: ①丸の数削減 ②レモン形 ③音声入力
+// 変更点: ①丸の数削減 ②レモン形 ③音声入力 ④マイク大きく ⑤スマホ対応
 
 let particles = [];
 let deepGlows = [];
@@ -7,20 +7,25 @@ let frameTimer = 0;
 let voiceText = "";
 let voiceParticles = [];
 let micBtn;
+let textInput;
 let recognition;
 let isListening = false;
+let isMobile = false;
+let showTextInput = false;
 
 function setup() {
   createCanvas(windowWidth, windowHeight);
   colorMode(HSB, 360, 100, 100, 1);
   noStroke();
 
-  // ① 数を減らす: 12 → 5
   for (let i = 0; i < 5; i++) {
     deepGlows.push(new DeepOpal());
   }
 
-  setupVoice(); // ③ 音声設定
+  // スマホ判定
+  isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+  setupVoice();
 }
 
 function draw() {
@@ -38,7 +43,6 @@ function draw() {
     if (particles[i].isFinished()) particles.splice(i, 1);
   }
 
-  // 音声テキストパーティクル表示
   for (let i = voiceParticles.length - 1; i >= 0; i--) {
     voiceParticles[i].update();
     voiceParticles[i].display();
@@ -49,39 +53,52 @@ function draw() {
     push();
     fill(200, 20, 90, 0.3 + sin(frameCount * 0.02) * 0.15);
     textAlign(CENTER);
-    textSize(13);
+    textSize(14);
     textFont('Georgia');
     text("tap to release your feelings", width / 2, height / 2);
-    text("🎤 mic button → speak your heart", width / 2, height / 2 + 28);
+    if (isMobile) {
+      text("🎤 → type your feeling", width / 2, height / 2 + 30);
+    } else {
+      text("🎤 mic → speak your heart", width / 2, height / 2 + 30);
+    }
     pop();
   }
 }
 
 function mousePressed() {
-  // ① マウスクリックでの追加も控えめに: 25→12
+  if (showTextInput) return;
   for (let i = 0; i < 12; i++) particles.push(new Particle(mouseX, mouseY));
   deepGlows.push(new DeepOpal(mouseX, mouseY));
-  // ① 上限も削減: 20→8
   if (deepGlows.length > 8) deepGlows.shift();
 }
 
-// ③ 音声認識セットアップ
 function setupVoice() {
-  // マイクボタン作成
+  // ④ マイクボタンを大きく (52px → 70px)
   micBtn = createButton("🎤");
   micBtn.position(20, 20);
-  micBtn.style("font-size", "24px");
-  micBtn.style("background", "rgba(0,0,0,0.5)");
+  micBtn.style("font-size", "30px");
+  micBtn.style("background", "rgba(0,0,0,0.55)");
   micBtn.style("color", "white");
-  micBtn.style("border", "1px solid rgba(100,200,255,0.4)");
+  micBtn.style("border", "1.5px solid rgba(100,200,255,0.5)");
   micBtn.style("border-radius", "50%");
-  micBtn.style("width", "52px");
-  micBtn.style("height", "52px");
+  micBtn.style("width", "70px");
+  micBtn.style("height", "70px");
   micBtn.style("cursor", "pointer");
   micBtn.style("z-index", "100");
-  micBtn.mousePressed(startVoice);
+  micBtn.style("box-shadow", "0 0 12px rgba(100,200,255,0.3)");
 
-  // Web Speech API
+  // ⑤ スマホはテキスト入力、PCは音声認識
+  if (isMobile) {
+    micBtn.mousePressed(showMobileInput);
+    setupTextInput();
+  } else {
+    micBtn.mousePressed(startVoice);
+    setupSpeechRecognition();
+  }
+}
+
+// PC用: Web Speech API
+function setupSpeechRecognition() {
   if ("webkitSpeechRecognition" in window || "SpeechRecognition" in window) {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     recognition = new SpeechRecognition();
@@ -94,39 +111,104 @@ function setupVoice() {
       releaseVoice(voiceText);
       isListening = false;
       micBtn.html("🎤");
-      micBtn.style("background", "rgba(0,0,0,0.5)");
+      micBtn.style("background", "rgba(0,0,0,0.55)");
     };
 
     recognition.onerror = () => {
       isListening = false;
       micBtn.html("🎤");
+      micBtn.style("background", "rgba(0,0,0,0.55)");
     };
   }
 }
 
 function startVoice() {
   if (!recognition) {
-    alert("お使いのブラウザは音声認識に対応していません（Chrome推奨）");
+    showMobileInput(); // fallback
     return;
   }
   if (isListening) {
     recognition.stop();
     isListening = false;
     micBtn.html("🎤");
-    micBtn.style("background", "rgba(0,0,0,0.5)");
+    micBtn.style("background", "rgba(0,0,0,0.55)");
   } else {
     recognition.start();
     isListening = true;
     micBtn.html("⏹");
-    micBtn.style("background", "rgba(200,50,50,0.6)");
+    micBtn.style("background", "rgba(200,50,50,0.7)");
   }
 }
 
-// ③ 声をパーティクルとして解放
+// ⑤ スマホ用: テキスト入力ボックス
+function setupTextInput() {
+  // 入力欄
+  textInput = createInput("");
+  textInput.attribute("placeholder", "気持ちを一言入れて...");
+  textInput.style("position", "fixed");
+  textInput.style("bottom", "80px");
+  textInput.style("left", "50%");
+  textInput.style("transform", "translateX(-50%)");
+  textInput.style("width", "80vw");
+  textInput.style("max-width", "360px");
+  textInput.style("padding", "14px 18px");
+  textInput.style("font-size", "16px");
+  textInput.style("font-family", "Georgia");
+  textInput.style("background", "rgba(0,0,0,0.7)");
+  textInput.style("color", "white");
+  textInput.style("border", "1px solid rgba(100,200,255,0.5)");
+  textInput.style("border-radius", "30px");
+  textInput.style("outline", "none");
+  textInput.style("z-index", "200");
+  textInput.style("display", "none");
+
+  // 送信ボタン
+  let sendBtn = createButton("解放する ✨");
+  sendBtn.style("position", "fixed");
+  sendBtn.style("bottom", "30px");
+  sendBtn.style("left", "50%");
+  sendBtn.style("transform", "translateX(-50%)");
+  sendBtn.style("padding", "12px 32px");
+  sendBtn.style("font-size", "16px");
+  sendBtn.style("font-family", "Georgia");
+  sendBtn.style("background", "rgba(100,180,255,0.25)");
+  sendBtn.style("color", "white");
+  sendBtn.style("border", "1px solid rgba(100,200,255,0.5)");
+  sendBtn.style("border-radius", "30px");
+  sendBtn.style("cursor", "pointer");
+  sendBtn.style("z-index", "200");
+  sendBtn.style("display", "none");
+
+  sendBtn.mousePressed(() => {
+    let msg = textInput.value().trim();
+    if (msg.length > 0) {
+      releaseVoice(msg);
+      textInput.value("");
+    }
+    textInput.style("display", "none");
+    sendBtn.style("display", "none");
+    showTextInput = false;
+  });
+
+  // グローバルに保持
+  window._sendBtn = sendBtn;
+}
+
+function showMobileInput() {
+  showTextInput = !showTextInput;
+  if (showTextInput) {
+    textInput.style("display", "block");
+    window._sendBtn.style("display", "block");
+    textInput.elt.focus();
+  } else {
+    textInput.style("display", "none");
+    window._sendBtn.style("display", "none");
+  }
+}
+
 function releaseVoice(text) {
   let cx = width / 2;
   let cy = height / 2;
-  // テキストを光として中央から広げる
   for (let i = 0; i < 40; i++) {
     voiceParticles.push(new VoiceParticle(cx, cy, text));
   }
@@ -134,16 +216,13 @@ function releaseVoice(text) {
   if (deepGlows.length > 8) deepGlows.shift();
 }
 
-// ② レモン形を描くカスタム関数
 function drawLemon(x, y, w, h) {
   push();
   translate(x, y);
   beginShape();
-  // レモン形: 楕円を上下に尖らせる
   for (let a = 0; a < TWO_PI; a += 0.1) {
     let px = (w / 2) * cos(a);
     let py = (h / 2) * sin(a) * (1 - 0.25 * abs(cos(a)));
-    // 上下を少し尖らせる
     let pointFactor = 1 + 0.3 * pow(abs(sin(a)), 8);
     vertex(px, py * pointFactor);
   }
@@ -186,18 +265,14 @@ class DeepOpal {
     push();
     translate(this.x, this.y);
     let sc = 0.2 + this.z * 0.8;
-
-    // ② レモン形で描画
     for (let layer = 3; layer >= 0; layer--) {
       let hue = (this.baseHue + frameCount * 0.3 + layer * 25 + sin(frameCount * 0.05) * 40) % 360;
       let layerW = this.size * sc * (1 + layer * 0.4);
-      let layerH = layerW * 1.5; // 縦長レモン比率
+      let layerH = layerW * 1.5;
       let layerAlpha = this.alpha * (0.15 - layer * 0.03);
       fill(hue, 45, 80, max(0, layerAlpha));
       drawLemon(0, 0, layerW, layerH);
     }
-
-    // コア
     let coreHue = (this.baseHue + frameCount * 0.5) % 360;
     fill(coreHue, 20, 85, this.alpha * 0.8);
     let coreSize = this.size * sc * 0.3;
@@ -225,7 +300,6 @@ class Particle {
   display() {
     let hueValue = (this.baseHue + sin(frameCount * 0.05 + this.phase) * 40) % 360;
     fill(hueValue, 30, 85, this.lifespan * 0.3);
-    // ② パーティクルもレモン形に
     drawLemon(this.pos.x, this.pos.y, this.size * 2.5, this.size * 3.5);
     fill(hueValue, 20, 85, this.lifespan);
     drawLemon(this.pos.x, this.pos.y, this.size, this.size * 1.5);
@@ -233,7 +307,6 @@ class Particle {
   isFinished() { return this.lifespan < 0; }
 }
 
-// ③ 声パーティクル
 class VoiceParticle {
   constructor(x, y, text) {
     this.pos = createVector(x, y);
@@ -243,7 +316,7 @@ class VoiceParticle {
     this.text = text;
     this.size = random(3, 7);
     this.hue = random(170, 260);
-    this.showText = random() < 0.15; // 一部だけテキスト表示
+    this.showText = random() < 0.15;
   }
   update() {
     this.vel.add(this.acc);
@@ -269,6 +342,7 @@ class VoiceParticle {
 }
 
 function touchStarted() {
+  if (showTextInput) return false;
   for (let i = 0; i < 12; i++) particles.push(new Particle(mouseX, mouseY));
   deepGlows.push(new DeepOpal(mouseX, mouseY));
   if (deepGlows.length > 8) deepGlows.shift();
