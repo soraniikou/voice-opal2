@@ -3,7 +3,7 @@
 Release your feelings through touch and voice
 🌊 Live Demo / 体験する
 ▶️ https://voice-opal2.vercel.app
-📸 Screenshot
+📸 ![screenshot](voice.opal/voice.png)
 �
 画像を読み込む
 タップするたびに、レモン形の光が宇宙へ広がります
