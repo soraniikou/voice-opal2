@@ -2,7 +2,7 @@ Becomes Opal 2
 言葉で解放する、インタラクティブビジュアルアート
 Release your feelings through your word
 Live Demo / 体験する
-▶️ https://voice-opal2.vercel.app
+▶️ https://becomes-opal2.vercel.app
 
 
 <img width="438" height="428" alt="suki" src="https://github.com/user-attachments/assets/8d868572-5a5f-4c05-859d-12cdc32784d9" />
