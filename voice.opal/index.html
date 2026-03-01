@@ -1,18 +1,451 @@
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <script src="https://cdn.jsdelivr.net/npm/p5@1.11.11/lib/p5.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/p5@1.11.11/lib/addons/p5.sound.min.js"></script>
-    
-    
-    
-    <link rel="stylesheet" type="text/css" href="style.css">
-    <meta charset="utf-8" />
 
-  </head>
-  <body>
-    <main>
-    </main>
-    <script src="sketch.js"></script>
-  </body>
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Becomes Opal — 言葉を解放する</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@200;300;400&family=Shippori+Mincho:wght@400;500&display=swap" rel="stylesheet">
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+  background: #060810;
+  overflow: hidden;
+  font-family: 'Shippori Mincho', 'Noto Serif JP', serif;
+  user-select: none;
+  touch-action: manipulation;
+}
+
+canvas { position:fixed; inset:0; }
+#bg  { z-index:0; }
+#fx  { z-index:1; pointer-events:none; }
+
+/* テキスト詩レイヤー */
+#lyricLayer {
+  position:fixed; inset:0;
+  z-index:2;
+  pointer-events:none;
+  overflow:hidden;
+}
+
+/* フィルムグレイン */
+body::after {
+  content:'';
+  position:fixed; inset:0; z-index:98;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
+  pointer-events:none;
+  opacity:0.3;
+  mix-blend-mode:overlay;
+}
+
+/* ── UI パネル ── */
+#ui {
+  position:fixed;
+  bottom:0; left:0; right:0;
+  z-index:100;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  padding: 0 0 40px;
+  gap:14px;
+}
+
+#wordIn {
+  width: min(82vw, 360px);
+  padding: 14px 22px;
+  font-size: 15px;
+  font-family: 'Shippori Mincho', serif;
+  background: rgba(6,8,18,0.88);
+  color: rgba(210,228,255,0.88);
+  border: 1px solid rgba(130,170,255,0.18);
+  border-radius: 3px;
+  outline: none;
+  letter-spacing: 0.1em;
+  caret-color: rgba(150,200,255,0.7);
+  transition: border-color 0.4s;
+}
+#wordIn:focus { border-color: rgba(130,170,255,0.38); }
+#wordIn::placeholder { color: rgba(90,120,170,0.45); letter-spacing:0.14em; }
+
+#releaseBtn {
+  padding: 11px 36px;
+  font-size: 12px;
+  font-family: 'Noto Serif JP', serif;
+  font-weight: 300;
+  letter-spacing: 0.28em;
+  background: transparent;
+  color: rgba(170,200,240,0.55);
+  border: 1px solid rgba(120,160,240,0.18);
+  border-radius: 2px;
+  cursor: pointer;
+  transition: all 0.4s;
+}
+#releaseBtn:hover, #releaseBtn:active {
+  background: rgba(90,130,220,0.07);
+  color: rgba(200,220,255,0.85);
+  border-color: rgba(130,170,255,0.3);
+}
+
+/* タイトル */
+#title {
+  position:fixed;
+  top:28px; left:50%;
+  transform:translateX(-50%);
+  color: rgba(140,170,215,0.16);
+  font-size:10px;
+  letter-spacing:0.38em;
+  font-family:'Noto Serif JP',serif;
+  font-weight:200;
+  pointer-events:none;
+  z-index:100;
+  white-space:nowrap;
+}
+</style>
+</head>
+<body>
+
+<canvas id="bg"></canvas>
+<canvas id="fx"></canvas>
+<div id="lyricLayer"></div>
+
+<div id="title">Becomes Opal</div>
+
+<div id="ui">
+  <input id="wordIn" type="text" placeholder="言葉を、解き放つ…" maxlength="30" autocomplete="off">
+  <button id="releaseBtn">解　放</button>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════
+//  BECOMES OPAL v5
+//  ✦ マイクなし、テキスト入力のみ
+//  ✦ 光なし — レモンが奥からゆっくり浮かぶ
+//  ✦ グリッチ詩断片
+// ═══════════════════════════════════════════════════
+
+const bgC = document.getElementById('bg');
+const fxC = document.getElementById('fx');
+const bg  = bgC.getContext('2d');
+const fx  = fxC.getContext('2d');
+const lyricLayer = document.getElementById('lyricLayer');
+
+let W, H;
+function resize() {
+  W = bgC.width = fxC.width = window.innerWidth;
+  H = bgC.height = fxC.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+let frame = 0;
+let lemons = [];       // 奥から浮かぶレモン
+let lyricFrags = [];   // 詩断片
+
+// ── 詩的断片プール ─────────────────────────────────
+const FRAGS = [
+  '忘れないよ','泡沫','消えないで','夜が明ける',
+  '君の名前','会いたくて','さよなら','生きてる',
+  '愛してる','溶けていく','息をして','泣かないで',
+  '帰りたい','儚い','温もり','遠くなる',
+  '夢の中','消えていく','触れたくて','声が聞こえる',
+  '終わらない','始まりの','揺れている','星の数',
+];
+
+// ── lemon shape ────────────────────────────────────
+function lemonPath(c, cx, cy, rw, rh) {
+  c.beginPath();
+  for (let i = 0; i <= 64; i++) {
+    const a = (i/64)*Math.PI*2;
+    const x = cx + rw * Math.cos(a);
+    const pf = 1 + 0.28 * Math.pow(Math.abs(Math.sin(a)), 7);
+    const y = cy + rh * Math.sin(a) * (1 - 0.22*Math.abs(Math.cos(a))) * pf;
+    i===0 ? c.moveTo(x,y) : c.lineTo(x,y);
+  }
+  c.closePath();
+}
+
+// ═══ Lemon — 奥から浮かぶ (光なし) ════════════════
+// z=0 が最奥 → z=1 が手前。サイズとalphaをzで決める。
+// パーティクル爆発なし。静かに出てきて静かに消える。
+class Lemon {
+  constructor(x, y, isMain) {
+    // isMain: 解放ボタンで生成されたメイン
+    this.cx = x ?? (W * 0.15 + Math.random() * W * 0.7);
+    this.cy = y ?? (H * 0.15 + Math.random() * H * 0.7);
+    if (x !== undefined) {
+      this.cx += (Math.random()-.5) * 200;
+      this.cy += (Math.random()-.5) * 160;
+    }
+
+    this.isMain = isMain ?? false;
+    this.z = 0;                                   // 0=奥 → 1=手前
+    this.targetZ = isMain ? (0.55 + Math.random()*0.35) : (0.3 + Math.random()*0.5);
+    this.riseSpeed = (0.00035 + Math.random()*0.0008) * (isMain ? 1.1 : 0.85);
+
+    this.baseHue = [205,215,195,230,220,45,200][Math.floor(Math.random()*7)];
+    this.baseSize = isMain ? (28 + Math.random()*30) : (14 + Math.random()*22);
+
+    this.ph = Math.random()*Math.PI*2;
+    this.age = 0;
+    this.peakAge = null;      // targetZ に達したフレーム
+    this.fadeDelay = isMain ? 600 : 400 + Math.floor(Math.random()*300);
+    this.dying = false;
+    this.alpha = 0;
+  }
+
+  update() {
+    this.age++;
+
+    if (!this.dying) {
+      // 奥からゆっくり浮上
+      if (this.z < this.targetZ) {
+        this.z += this.riseSpeed;
+        if (this.z >= this.targetZ) {
+          this.z = this.targetZ;
+          this.peakAge = this.age;
+        }
+      } else {
+        // 到達後、fadeDelay フレーム待って消え始める
+        if (this.age - this.peakAge > this.fadeDelay) {
+          this.dying = true;
+        }
+      }
+      // alpha は z に比例 — 最大でも薄い
+      this.alpha = this.z * (this.isMain ? 0.22 : 0.18);
+    } else {
+      this.alpha -= 0.00018;
+    }
+
+    // 微細な漂い
+    this.cx += Math.sin(frame*0.007 + this.ph) * 0.12;
+    this.cy += Math.cos(frame*0.005 + this.ph) * 0.08;
+  }
+
+  draw() {
+    if (this.alpha <= 0) return;
+    const sc = 0.15 + this.z * 0.85;   // 奥=小さく 手前=大きく
+    const rw = this.baseSize * sc;
+    const rh = rw * 1.55;
+
+    bg.save();
+    bg.translate(this.cx, this.cy);
+
+    // 外層 (ぼんやりしたオーラ) — 光はなく形のみ
+    for (let l = 2; l >= 0; l--) {
+      const h = (this.baseHue + frame*0.2 + l*18 + Math.sin(frame*0.03)*25) % 360;
+      const lw = rw * (1 + l*0.45);
+      const lh = lw * 1.55;
+      // alpha は外へいくほど薄く、かつ全体的に控えめ
+      const a = Math.max(0, this.alpha * (0.055 - l*0.016));
+      bg.fillStyle = `hsla(${h},38%,72%,${a})`;
+      lemonPath(bg, 0, 0, lw, lw*1.55);
+      bg.fill();
+    }
+
+    // コア (輪郭だけ、光なし)
+    const ch = (this.baseHue + frame*0.3) % 360;
+    bg.fillStyle = `hsla(${ch},22%,80%,${this.alpha * 0.32})`;
+    lemonPath(bg, 0, 0, rw*0.55, rh*0.55);
+    bg.fill();
+
+    bg.restore();
+  }
+
+  done() { return this.alpha <= 0 && this.dying; }
+}
+
+// ═══ LyricFragment ════════════════════════════════
+class LyricFragment {
+  constructor(text, cx, cy, mode) {
+    this.mode = mode;
+    this.elapsed = 0;
+    this.duration = 240 + Math.floor(Math.random()*180);
+    this.fadeInEnd = 40;
+    this.fadeOutStart = this.duration - 80;
+
+    const el = document.createElement('div');
+    el.style.cssText = `
+      position:absolute;
+      font-family:'Shippori Mincho','Noto Serif JP',serif;
+      pointer-events:none;
+      mix-blend-mode:screen;
+      will-change:transform,opacity;
+      white-space:nowrap;
+    `;
+
+    if (mode === 'vertical') {
+      el.style.writingMode = 'vertical-rl';
+      el.style.fontSize = (13 + Math.random()*9) + 'px';
+      el.style.fontWeight = '300';
+      el.style.letterSpacing = '0.2em';
+      el.style.color = `hsla(215,55%,68%,0)`;
+    } else if (mode === 'glitch') {
+      el.style.fontSize = (20 + Math.random()*16) + 'px';
+      el.style.fontWeight = '400';
+      el.style.letterSpacing = '0.06em';
+      el.style.color = `hsla(45,60%,74%,0)`;
+    } else {
+      el.style.fontSize = (12 + Math.random()*8) + 'px';
+      el.style.fontWeight = '200';
+      el.style.letterSpacing = '0.16em';
+      el.style.color = `hsla(200,28%,82%,0)`;
+    }
+
+    const ox = (Math.random()-.5) * (mode==='glitch' ? 100 : W*0.48);
+    const oy = (Math.random()-.5) * (mode==='glitch' ? 50 : H*0.38);
+    el.style.left = (cx + ox) + 'px';
+    el.style.top  = (cy + oy) + 'px';
+
+    this.el = el;
+    this.el.textContent = text;
+    lyricLayer.appendChild(el);
+
+    if (mode === 'glitch') this._glitch(text);
+
+    this.startX = cx + ox;
+    this.startY = cy + oy;
+    this.vx = (Math.random()-.5) * 0.1;
+    this.vy = mode==='glitch' ? -(0.15+Math.random()*0.2)
+            : mode==='vertical' ? -(0.1+Math.random()*0.15)
+            : ((Math.random()-.5)*0.18);
+  }
+
+  _glitch(finalText) {
+    const pool = '忘消光影夢泡沫星月雨花涙波声息炎霧絆刹那永遠記憶想鏡罪愛魂';
+    let n = 0; const total = 14;
+    const iv = setInterval(() => {
+      if (n >= total) { this.el.textContent = finalText; clearInterval(iv); return; }
+      this.el.textContent = finalText.split('').map(ch =>
+        Math.random() < (n/total) ? ch : pool[Math.floor(Math.random()*pool.length)]
+      ).join('');
+      n++;
+    }, 60);
+  }
+
+  update() {
+    this.elapsed++;
+    let op = 0;
+    if (this.elapsed < this.fadeInEnd) {
+      op = this.elapsed / this.fadeInEnd;
+    } else if (this.elapsed > this.fadeOutStart) {
+      op = 1 - (this.elapsed - this.fadeOutStart) / (this.duration - this.fadeOutStart);
+    } else {
+      op = 1;
+    }
+    op = Math.max(0, Math.min(1, op)) * 0.85;
+
+    const x = this.startX + this.vx * this.elapsed;
+    const y = this.startY + this.vy * this.elapsed;
+    this.el.style.left = x + 'px';
+    this.el.style.top  = y + 'px';
+
+    const col = this.el.style.color;
+    if      (col.includes('45,'))  this.el.style.color = `hsla(45,62%,72%,${op})`;
+    else if (col.includes('215,')) this.el.style.color = `hsla(215,52%,65%,${op})`;
+    else                           this.el.style.color = `hsla(200,26%,82%,${op})`;
+
+    // テキストの輝き — glitchだけほんのり
+    if (this.mode === 'glitch') {
+      this.el.style.textShadow = `0 0 ${8*op}px hsla(45,55%,58%,${op*0.22})`;
+    }
+  }
+
+  done() {
+    if (this.elapsed >= this.duration) { this.el.remove(); return true; }
+    return false;
+  }
+}
+
+// ═══ Release ══════════════════════════════════════
+function release(text) {
+  const cx = W/2, cy = H/2;
+
+  // メインテキスト (グリッチ)
+  lyricFrags.push(new LyricFragment(text, cx, cy, 'glitch'));
+
+  // レモン — 中心から奥→手前へ複数
+  const lCount = Math.min(5, 2 + Math.floor(text.length / 4));
+  for (let i = 0; i < lCount; i++) {
+    setTimeout(() => {
+      lemons.push(new Lemon(cx, cy, i===0));
+    }, i * 300);
+  }
+
+  // 詩断片
+  const fCount = Math.min(4, 2 + Math.floor(text.length / 5));
+  for (let i = 0; i < fCount; i++) {
+    setTimeout(() => {
+      const frag = FRAGS[Math.floor(Math.random()*FRAGS.length)];
+      const mode = Math.random()<.35 ? 'vertical' : 'rise';
+      lyricFrags.push(new LyricFragment(frag, cx, cy, mode));
+    }, i * 220 + 120);
+  }
+}
+
+// ═══ UI ══════════════════════════════════════════
+const wordIn     = document.getElementById('wordIn');
+const releaseBtn = document.getElementById('releaseBtn');
+
+function submit() {
+  const v = wordIn.value.trim();
+  if (!v) return;
+  release(v);
+  wordIn.value = '';
+}
+
+releaseBtn.addEventListener('click', submit);
+wordIn.addEventListener('keydown', e => { if (e.key==='Enter') submit(); });
+
+// ═══ Init ════════════════════════════════════════
+// 背景にレモンをいくつかゆっくり浮かせておく
+for (let i = 0; i < 4; i++) {
+  setTimeout(() => lemons.push(new Lemon()), i * 800);
+}
+
+// ═══ Draw loop ════════════════════════════════════
+function loop() {
+  frame++;
+
+  // 残像 (薄く引く)
+  bg.fillStyle = 'rgba(6,8,16,0.06)';
+  bg.fillRect(0, 0, W, H);
+
+  // レモン
+  for (let i = lemons.length-1; i >= 0; i--) {
+    lemons[i].update();
+    lemons[i].draw();
+    if (lemons[i].done()) lemons.splice(i, 1);
+  }
+
+  // ヒント (レモンのみ、詩断片がない時)
+  if (lyricFrags.length === 0) {
+    const a = 0.12 + Math.sin(frame*0.016)*0.05;
+    bg.fillStyle = `rgba(145,175,220,${a})`;
+    bg.font = '200 11px "Noto Serif JP",serif';
+    bg.textAlign = 'center';
+    bg.fillText('言葉を書いて、解放してください', W/2, H/2 - 60);
+  }
+
+  // ビネット
+  fx.clearRect(0, 0, W, H);
+  const vg = fx.createRadialGradient(W/2,H/2, H*0.28, W/2,H/2, H*0.82);
+  vg.addColorStop(0, 'rgba(0,0,0,0)');
+  vg.addColorStop(1, 'rgba(4,6,14,0.5)');
+  fx.fillStyle = vg;
+  fx.fillRect(0, 0, W, H);
+
+  // 詩断片
+  for (let i = lyricFrags.length-1; i >= 0; i--) {
+    lyricFrags[i].update();
+    if (lyricFrags[i].done()) lyricFrags.splice(i, 1);
+  }
+
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
 </html>
+  
